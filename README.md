@@ -183,4 +183,5 @@ RTOS_PROJECT/
 
 ---
 
-*Real-Time Embedded Systems Course — ESIX MeSN 2A*
+*Real-Time Embedded Systems Course — ESIX MeSN 2A*  
+*Supervised by Basile Dufay & Christophe Cordier — Implemented by Abdelmoutalib Douadi*
