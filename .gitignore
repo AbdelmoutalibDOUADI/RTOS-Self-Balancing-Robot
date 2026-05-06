@@ -1,0 +1,8 @@
+# Do not track output files of the toolchain
+Debug/
+Release/
+#Do not track IDE config files which are specifics to the user, not related to project itself.
+.cprojet
+.mxproject
+.project
+.settings/
