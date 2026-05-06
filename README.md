@@ -1,92 +1,73 @@
-# Self-Balancing Robot — FreeRTOS & CMSIS-RTOS v1 / STM32L152RE
+# Self-Balancing Robot — STM32L152RE · FreeRTOS · CMSIS-RTOS v1
 
-> TP Systèmes Embarqués Temps-Réel — MeSE2A  
-> Plateforme : STM32 Nucleo-L152RE · FreeRTOS + CMSIS-RTOS v1 API · IMU LSM6DS3
+**ESIX MeSN 2A — TP Systèmes Temps-Réel | ENSICaen**
 
----
-
-## Overview
-
-Embedded application for a **self-balancing (Segway-type) robot**, developed as part of a real-time systems lab.  
-The firmware runs on a **STM32L152RE** microcontroller using **FreeRTOS** through the **CMSIS-RTOS v1 API** (`cmsis_os.h`) and implements:
-
-- Real-time control loop at **10 ms** sampling period
-- Tilt angle estimation via an **observer algorithm** (accelerometer + gyroscope fusion)
-- Motor command calculation via a **regulation law**
-- Circular buffer storing the **last 100 angle samples**
-- Interactive **UART shell** for live monitoring
-- Real-time **angle streaming** with a companion Python script
+Firmware embarqué pour un robot auto-balancé (type Segway) développé dans le cadre du TP4 d'un cours de systèmes temps-réel. L'application est **multitâche**, tourne sous **FreeRTOS** via l'API **CMSIS-RTOS v1**, et implémente un asservissement d'équilibre en temps réel sur microcontrôleur **ARM Cortex-M3**.
 
 ---
 
-## Architecture
+## Matériel utilisé
+
+| Composant | Rôle |
+|-----------|------|
+| STM32 Nucleo-L152RE (ARM Cortex-M3 @ 32 MHz) | Microcontrôleur principal |
+| LSM6DS3 (ST) — I2C | IMU : accéléromètre + gyroscope |
+| TB6612FNG | Pont en H — pilotage moteur CC |
+| LED (on-board PA5) | Indicateur d'état de l'équilibre |
+| UART (FTDI USB-TTL) | Shell de communication série |
+| LCD 16×2 + clavier matriciel 12 touches | IHM locale (extension avancée) |
+
+---
+
+## Architecture logicielle
+
+L'application repose sur **3 tâches FreeRTOS** communicant via des queues et protégées par des mutex :
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    FreeRTOS Tasks                   │
-│                                                     │
-│  ┌──────────────────┐   ┌──────────────────────┐   │
-│  │  Asservissement  │   │    Enregistrement     │   │
-│  │   (osPriorityHigh)│   │ (osPriorityAboveNormal)│  │
-│  │                  │   │                      │   │
-│  │ • Read IMU (I2C) │──►│ • Circular buffer    │   │
-│  │ • Angle observer │   │ • LED indicator      │   │
-│  │ • Command law    │   │ • Stream queue       │   │
-│  │ • Motor control  │   └──────────────────────┘   │
-│  └──────────────────┘                               │
-│                                                     │
-│  ┌──────────────────┐                               │
-│  │  Communication   │                               │
-│  │  (osPriorityNormal)│                              │
-│  │                  │                               │
-│  │ UART Shell:      │                               │
-│  │  read / dump /   │                               │
-│  │  stream / help   │                               │
-│  └──────────────────┘                               │
-└─────────────────────────────────────────────────────┘
-         CMSIS-RTOS v1 sync: 3 osMutex + 2 osMessageQ
+┌──────────────────────────────────────────────────────────────┐
+│                        CMSIS-RTOS v1                         │
+│                                                              │
+│  ┌─────────────────────┐     ┌────────────────────────────┐  │
+│  │   Asservissement    │     │      Enregistrement        │  │
+│  │  osPriorityHigh     │────►│  osPriorityAboveNormal     │  │
+│  │                     │     │                            │  │
+│  │ • Lecture IMU (I2C) │     │ • Buffer circulaire 100val │  │
+│  │ • Observateur angle │     │ • LED (seuil ±25°)         │  │
+│  │ • Loi de commande   │     │ • Queue streaming          │  │
+│  │ • Moteur (PWM)      │     └────────────────────────────┘  │
+│  │ • osDelayUntil 10ms │                                     │
+│  └─────────────────────┘                                     │
+│                                                              │
+│  ┌─────────────────────┐                                     │
+│  │   Communication     │                                     │
+│  │  osPriorityNormal   │                                     │
+│  │                     │                                     │
+│  │ • Shell UART        │                                     │
+│  │ • read/dump/stream  │                                     │
+│  │ • help              │                                     │
+│  └─────────────────────┘                                     │
+│                                                              │
+│         Synchronisation : 3 osMutex · 2 osMessageQ          │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Hardware
+## Fonctionnalités implémentées
 
-| Component | Description |
-|-----------|-------------|
-| **MCU** | STM32L152RE (Nucleo-64) — ARM Cortex-M3 @ 32 MHz |
-| **IMU** | LSM6DS3 (ST) — Accelerometer + Gyroscope via I2C |
-| **Motor Driver** | TB6612FNG — H-bridge for DC motor |
-| **LCD** | MeSN shield LCD display |
-| **UART** | FTDI USB-to-TTL bridge (9600 baud) |
+### 1. Asservissement temps-réel (10 ms strictement)
+- Lecture accéléromètre (axe X) et gyroscope (axe Y) via I2C
+- Calcul de l'angle d'inclinaison par un **algorithme d'observateur**
+- Calcul de la commande moteur par une **loi de régulation**
+- Exécution périodique garantie avec `osDelayUntil`
 
----
+### 2. Enregistrement
+- Stockage des **100 dernières valeurs** d'angle dans un buffer circulaire
+- **LED indicateur** : allumée fixe si `|angle| > 25°`, clignotante (100 ms / 0.5 s) sinon
 
-## Software Stack
+### 3. Shell UART
 
-```
-Application (freertos.c)
-    │
-    ├── CMSIS-RTOS v1 API (cmsis_os.h)
-    │       └── FreeRTOS kernel
-    ├── STM32L1xx HAL Drivers
-    └── Custom MeSN Drivers
-            ├── LSM6DS3  (IMU — I2C)
-            ├── MotorDriver (TB6612FNG — PWM/GPIO)
-            ├── MESN_UART (asynchronous serial)
-            ├── LCD
-            ├── Clavier
-            └── TimeBase
-```
-
-**Control algorithms** are provided as a pre-compiled static library (`libSBR_autom_obs-corr.a`):
-- `autoAlgo_angleObs(acc_mg, rotAng_mDegSec)` — tilt angle observer
-- `autoAlgo_commandLaw(tiltAngle_mDeg, rotAng_mDegSec)` — regulation law
-
----
-
-## UART Shell
-
-Connect with any terminal (TeraTerm, RealTerm, PuTTY) at **9600 baud**.
+Connexion via terminal série (TeraTerm, Minicom, PuTTY) à **9600 baud** :
 
 ```
 SelfBalancingRobot:~# help
@@ -94,74 +75,113 @@ SelfBalancingRobot:~# help
 Commands:
  read   - return last measured angle value
  dump   - return last hundred angle values
- stream - continuously return last measured angle value and update display
-          press ENTER to quit stream mode
+ stream - continuously return last measured angle value (press ENTER to quit)
  help   - print this menu
 ```
 
+### 4. Extension avancée — IHM LCD + clavier
+- Affichage sur LCD 16×2 : menu, valeurs, modes
+- Navigation via clavier matriciel 12 touches
+- Menu principal : `1:Rd  2:Dmp  3:Str`
+- Commandes `Read`, `Dump`, `Stream` accessibles localement
+
 ---
 
-## Real-Time Streaming (Python)
+## Algorithmes d'asservissement
 
-A companion script `affichageSTREAM.py` plots the tilt angle in real time using **matplotlib**.
+Fournis sous forme de bibliothèque pré-compilée (`libSBR_autom_obs-corr.a`) :
+
+```c
+// Observateur : estimation de l'angle (milli-degrés)
+int32_t autoAlgo_angleObs(int32_t acc_mg, int32_t rotAng_mDegSec);
+
+// Loi de commande : vitesse moteur (‰ de la vitesse max, ±1000)
+int32_t autoAlgo_commandLaw(int32_t tiltAngle_mDeg, int32_t rotAng_mDegSec);
+```
+
+- `acc_mg` : accélération axe X en milli-g
+- `rotAng_mDegSec` : vitesse angulaire axe Y en milli-deg/s
+- Période d'échantillonnage : **10 ms** (temps discret)
+
+---
+
+## Stack logicielle
+
+```
+Application (freertos.c / main.c)
+    │
+    ├── CMSIS-RTOS v1 API  (cmsis_os.h)
+    │       └── FreeRTOS 10.0.1 kernel
+    ├── STM32L1xx HAL (STM32CubeMX 6.6.1)
+    └── Drivers MeSN
+            ├── LSM6DS3     — IMU via I2C
+            ├── MotorDriver — TB6612FNG via PWM/GPIO
+            ├── MESN_UART   — liaison série asynchrone
+            ├── MeSN_I2C    — bus I2C avec support OS
+            ├── LCD         — afficheur 16×2
+            ├── Clavier     — clavier matriciel
+            └── TimeBase    — base de temps
+```
+
+**Toolchain :** STM32CubeIDE 1.10.1 · GCC arm-atollic-eabi 10.6.2 · ST-Link · TraceAnalyser 4.6.6
+
+---
+
+## Visualisation temps-réel (Python)
+
+Le script `affichageSTREAM.py` trace l'angle en temps réel via matplotlib :
 
 ```bash
 pip install pyserial matplotlib
 python affichageSTREAM.py
 ```
 
-> Edit `PORT` in the script to match your serial port (e.g. `/dev/ttyUSB0` on Linux, `COM3` on Windows).
+> Modifier `PORT` dans le script (`/dev/ttyUSB0` sous Linux, `COM3` sous Windows).
 
 ---
 
 ## Build & Flash
 
-1. Open the project in **STM32CubeIDE** (`pjctFiles/`)
-2. Build: `Project > Build All`
-3. Flash: `Run > Debug` (ST-Link via Nucleo USB)
-
-> Toolchain: GCC ARM Embedded · Debugger: OpenOCD / ST-Link
+1. Ouvrir le projet dans **STM32CubeIDE** (`pjctFiles/`)
+2. `Project > Build All`
+3. `Run > Debug` (ST-Link via USB Nucleo)
 
 ---
 
-## Project Structure
+## Structure du projet
 
 ```
 RTOS_PROJECT/
 ├── pjctFiles/
 │   ├── Src/
-│   │   ├── freertos.c       ← Application tasks (main logic)
-│   │   ├── main.c           ← Peripherals init + scheduler start
-│   │   ├── gpio.c / tim.c   ← HAL peripheral configs
+│   │   ├── freertos.c          ← Tâches applicatives (logique principale)
+│   │   ├── main.c              ← Init périphériques + démarrage scheduler
+│   │   ├── gpio.c / tim.c      ← Config HAL
 │   │   └── ...
-│   ├── Inc/                 ← Headers + FreeRTOSConfig.h
-│   ├── Drivers/
-│   │   ├── CMSIS/           ← ARM & ST CMSIS headers
-│   │   ├── STM32L1xx_HAL_Driver/
-│   │   └── MeSN/            ← Custom peripheral drivers
-│   ├── Middlewares/
-│   │   └── Third_Party/FreeRTOS/
-│   ├── Lib/Autom/           ← Pre-compiled control algorithms
-│   └── Doc/Datasheets/      ← Component datasheets & schematics
-└── affichageSTREAM.py       ← Real-time angle plot (Python)
+│   ├── Inc/
+│   │   ├── FreeRTOSConfig.h    ← Config OS (préemptif, tick, heap...)
+│   │   └── ...
+│   ├── Drivers/MeSN/           ← Pilotes périphériques custom
+│   ├── Middlewares/FreeRTOS/   ← Noyau FreeRTOS + CMSIS-RTOS wrapper
+│   ├── Lib/Autom/              ← Bibliothèque algo observateur/correcteur
+│   └── Doc/                    ← Datasheets & schémas
+└── affichageSTREAM.py          ← Visualisation angle en temps réel
 ```
 
 ---
 
-## Key Concepts Demonstrated
+## Concepts mis en œuvre
 
-- **Multitasking** with FreeRTOS task priorities and scheduling
-- **Inter-task communication** via message queues (`osMessageQ`)
-- **Shared resource protection** via mutexes (`osMutex`)
-- **Periodic task execution** with `osDelayUntil` (hard real-time)
-- **Circular buffer** implementation for sensor data history
-- **Sensor fusion** (accelerometer + gyroscope) via observer algorithm
-- **UART command shell** with non-blocking I/O
+- Ordonnancement **préemptif** par priorités sous FreeRTOS
+- Tâche périodique **temps-réel dur** avec `osDelayUntil` (jitter minimal)
+- Communication inter-tâches par **queues de messages** (`osMessageQ`)
+- Protection des ressources partagées par **mutex** (`osMutex`)
+- **Buffer circulaire** thread-safe pour l'historique des mesures
+- **Fusion de capteurs** accéléromètre/gyroscope par observateur d'état
+- Détection de **stack overflow** (`vApplicationStackOverflowHook`)
+- Débogage avec **Tracealyzer** (TraceRecorder intégré)
 
 ---
 
-## License
-
-HAL drivers © STMicroelectronics — Apache 2.0 / BSD  
-FreeRTOS © Amazon — MIT  
-Application code © Douadi — educational use
+*Cours Systèmes Embarqués Temps-Réel — ESIX MeSN 2A — ENSICaen*  
+*Basile Dufay · Christophe Cordier*
