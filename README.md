@@ -1,6 +1,6 @@
 # Self-Balancing Robot — STM32L152RE · FreeRTOS · CMSIS-RTOS v1
 
-**ESIX MeSN 2A — TP Systèmes Temps-Réel | ENSICaen**
+**ESIX MeSN 2A — TP Systèmes Temps-Réel**
 
 Firmware embarqué pour un robot auto-balancé (type Segway) développé dans le cadre du TP4 d'un cours de systèmes temps-réel. L'application est **multitâche**, tourne sous **FreeRTOS** via l'API **CMSIS-RTOS v1**, et implémente un asservissement d'équilibre en temps réel sur microcontrôleur **ARM Cortex-M3**.
 
@@ -183,5 +183,5 @@ RTOS_PROJECT/
 
 ---
 
-*Cours Systèmes Embarqués Temps-Réel — ESIX MeSN 2A — ENSICaen*  
+*Cours Systèmes Embarqués Temps-Réel — ESIX MeSN 2A*  
 *Basile Dufay · Christophe Cordier*
